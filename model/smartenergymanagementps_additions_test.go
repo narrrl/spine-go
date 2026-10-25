@@ -1,0 +1,1019 @@
+package model
+
+import (
+	"testing"
+	"time"
+
+	"github.com/enbility/spine-go/util"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestSmartEnergyManagementPsDataType_UpdateList_BasicReplacement(t *testing.T) {
+	// Arrange - existing data structure
+	existing := &SmartEnergyManagementPsDataType{
+		NodeScheduleInformation: &PowerSequenceNodeScheduleInformationDataType{
+			NodeRemoteControllable:           util.Ptr(true),
+			SupportsSingleSlotSchedulingOnly: util.Ptr(true),
+			AlternativesCount:                util.Ptr(uint(1)),
+			SupportsReselection:              util.Ptr(false),
+		},
+	}
+
+	// New data for full replacement
+	newData := &SmartEnergyManagementPsDataType{
+		NodeScheduleInformation: &PowerSequenceNodeScheduleInformationDataType{
+			NodeRemoteControllable:           util.Ptr(false),
+			SupportsSingleSlotSchedulingOnly: util.Ptr(false),
+			AlternativesCount:                util.Ptr(uint(2)),
+			SupportsReselection:              util.Ptr(true),
+		},
+	}
+
+	// Act - this should fail initially as UpdateList is not implemented
+	result, success := existing.UpdateList(false, true, newData, nil, nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	// Verify the data was replaced
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	assert.Equal(t, false, *resultData.NodeScheduleInformation.NodeRemoteControllable)
+	assert.Equal(t, false, *resultData.NodeScheduleInformation.SupportsSingleSlotSchedulingOnly)
+	assert.Equal(t, uint(2), *resultData.NodeScheduleInformation.AlternativesCount)
+	assert.Equal(t, true, *resultData.NodeScheduleInformation.SupportsReselection)
+}
+
+func TestSmartEnergyManagementPsDataType_UpdateList_MergeNodeScheduleInformation(t *testing.T) {
+	// Arrange - existing data structure
+	existing := &SmartEnergyManagementPsDataType{
+		NodeScheduleInformation: &PowerSequenceNodeScheduleInformationDataType{
+			NodeRemoteControllable:           util.Ptr(false),
+			SupportsSingleSlotSchedulingOnly: util.Ptr(false),
+			AlternativesCount:                util.Ptr(uint(2)),
+			SupportsReselection:              util.Ptr(true),
+		},
+	}
+
+	// Change only NodeRemoteControllable, to test its merge
+	newData := &SmartEnergyManagementPsDataType{
+		NodeScheduleInformation: &PowerSequenceNodeScheduleInformationDataType{
+			NodeRemoteControllable: util.Ptr(true),
+		},
+	}
+
+	result, success := existing.UpdateList(false, true, newData, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	// Verify the replaced data and the persistence of the existing ones
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	assert.Equal(t, true, *resultData.NodeScheduleInformation.NodeRemoteControllable)
+	assert.Equal(t, false, *resultData.NodeScheduleInformation.SupportsSingleSlotSchedulingOnly)
+	assert.Equal(t, uint(2), *resultData.NodeScheduleInformation.AlternativesCount)
+	assert.Equal(t, true, *resultData.NodeScheduleInformation.SupportsReselection)
+	assert.Nil(t, resultData.NodeScheduleInformation.TotalSequencesCountMax)
+
+	// Try again by updating the rest
+	newData = &SmartEnergyManagementPsDataType{
+		NodeScheduleInformation: &PowerSequenceNodeScheduleInformationDataType{
+			SupportsSingleSlotSchedulingOnly: util.Ptr(false),
+			AlternativesCount:                util.Ptr(uint(1)),
+			TotalSequencesCountMax:           util.Ptr(uint(1)),
+			SupportsReselection:              util.Ptr(false),
+		},
+	}
+	result, success = existing.UpdateList(false, true, newData, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	// Verify the data was replaced
+	resultData = result.(*SmartEnergyManagementPsDataType)
+	assert.Equal(t, true, *resultData.NodeScheduleInformation.NodeRemoteControllable)
+	assert.Equal(t, false, *resultData.NodeScheduleInformation.SupportsSingleSlotSchedulingOnly)
+	assert.Equal(t, uint(1), *resultData.NodeScheduleInformation.AlternativesCount)
+	assert.Equal(t, false, *resultData.NodeScheduleInformation.SupportsReselection)
+	assert.Equal(t, uint(1), *resultData.NodeScheduleInformation.TotalSequencesCountMax)
+}
+
+func TestSmartEnergyManagementPsDataType_UpdateList_InvalidType(t *testing.T) {
+	// Arrange
+	existing := &SmartEnergyManagementPsDataType{}
+	invalidData := "not a SmartEnergyManagementPsDataType"
+
+	// Act
+	result, success := existing.UpdateList(false, true, invalidData, nil, nil, nil)
+
+	// Assert
+	assert.False(t, success)
+	assert.Equal(t, existing, result)
+}
+
+// Test OHPCF-005: Update sequence state
+func TestSmartEnergyManagementPsDataType_UpdateList_SequenceState(t *testing.T) {
+	// Arrange - heat pump with one sequence in "inactive" state
+	existing := createOHPCFStructure()
+
+	// Create update to change state to "running"
+	update := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					State: util.Ptr(PowerSequenceStateTypeRunning),
+				},
+			}},
+		}},
+	}
+
+	// Act - this should update only the state field
+	result, success := existing.UpdateList(false, true, update, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	// State should be updated
+	assert.Equal(t, PowerSequenceStateTypeRunning, *resultData.Alternatives[0].PowerSequence[0].State.State)
+	// Other fields should remain unchanged
+	assert.Equal(t, PowerSequenceIdType(1), *resultData.Alternatives[0].PowerSequence[0].Description.SequenceId)
+	assert.True(t, *resultData.Alternatives[0].PowerSequence[0].State.SequenceRemoteControllable)
+}
+
+// Test OHPCF-004: Update schedule start time
+func TestSmartEnergyManagementPsDataType_UpdateList_ScheduleStartTime(t *testing.T) {
+	// Arrange - heat pump ready to be scheduled
+	existing := createOHPCFStructure()
+	startTime := NewAbsoluteOrRelativeTimeType("2024-01-15T10:00:00Z")
+
+	// Create update to set schedule start time
+	update := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				Schedule: &PowerSequenceScheduleDataType{
+					StartTime: startTime,
+				},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, update, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	// StartTime should be updated
+	assert.Equal(t, startTime, resultData.Alternatives[0].PowerSequence[0].Schedule.StartTime)
+	// State should remain unchanged
+	assert.Equal(t, PowerSequenceStateTypeInactive, *resultData.Alternatives[0].PowerSequence[0].State.State)
+}
+
+// Test that updates don't modify the original when persist is false
+func TestSmartEnergyManagementPsDataType_UpdateList_NoPersist(t *testing.T) {
+	// Arrange
+	existing := createOHPCFStructure()
+	originalState := *existing.Alternatives[0].PowerSequence[0].State.State
+
+	update := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					State: util.Ptr(PowerSequenceStateTypeRunning),
+				},
+			}},
+		}},
+	}
+
+	// Act - persist = false
+	result, success := existing.UpdateList(false, false, update, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	// Original should not be modified
+	assert.Equal(t, originalState, *existing.Alternatives[0].PowerSequence[0].State.State)
+
+	// Result should have the update
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	assert.Equal(t, PowerSequenceStateTypeRunning, *resultData.Alternatives[0].PowerSequence[0].State.State)
+}
+
+// Test edge case: update with no alternatives
+func TestSmartEnergyManagementPsDataType_UpdateList_NoAlternatives(t *testing.T) {
+	// Arrange - structure with no alternatives
+	existing := &SmartEnergyManagementPsDataType{
+		NodeScheduleInformation: &PowerSequenceNodeScheduleInformationDataType{
+			NodeRemoteControllable: util.Ptr(true),
+		},
+	}
+
+	update := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					State: util.Ptr(PowerSequenceStateTypeRunning),
+				},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, update, NewFilterTypePartial(), nil, nil)
+
+	// Assert - should succeed but not crash
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	// Original structure should remain unchanged
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	assert.Equal(t, 0, len(resultData.Alternatives))
+}
+
+// Test multiple field updates in single operation
+func TestSmartEnergyManagementPsDataType_UpdateList_MultipleFields(t *testing.T) {
+	// Arrange
+	existing := createOHPCFStructure()
+	startTime := NewAbsoluteOrRelativeTimeType("2024-01-15T10:00:00Z")
+
+	// Update both state and schedule
+	update := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					State: util.Ptr(PowerSequenceStateTypeScheduled),
+				},
+				Schedule: &PowerSequenceScheduleDataType{
+					StartTime: startTime,
+				},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, update, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	// Both fields should be updated
+	assert.Equal(t, PowerSequenceStateTypeScheduled, *resultData.Alternatives[0].PowerSequence[0].State.State)
+	assert.Equal(t, startTime, resultData.Alternatives[0].PowerSequence[0].Schedule.StartTime)
+	// Other fields remain unchanged
+	assert.True(t, *resultData.Alternatives[0].PowerSequence[0].State.SequenceRemoteControllable)
+}
+
+// Test that delete filter returns false (not supported)
+func TestSmartEnergyManagementPsDataType_UpdateList_DeleteNotSupported(t *testing.T) {
+	// Arrange
+	existing := createOHPCFStructure()
+
+	// Act - create a delete filter
+	deleteFilter := &FilterType{
+		CmdControl: &CmdControlType{Delete: &ElementTagType{}},
+	}
+	result, success := existing.UpdateList(false, true, existing, nil, deleteFilter, nil)
+
+	// Assert
+	assert.False(t, success)
+	assert.Equal(t, existing, result)
+}
+
+// PHASE 2 NOTIFICATION SUPPORT TESTS
+
+// Test OHPCF-005: Device notifies state change from inactive to scheduled
+func TestSmartEnergyManagementPsDataType_UpdateList_StateChangeNotification(t *testing.T) {
+	// Arrange - heat pump in inactive state
+	existing := createOHPCFStructure()
+
+	// Device sends notification that state changed to scheduled
+	notification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					State: util.Ptr(PowerSequenceStateTypeScheduled),
+				},
+			}},
+		}},
+	}
+
+	// Act - handle partial update notification
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	// State should be updated to scheduled
+	assert.Equal(t, PowerSequenceStateTypeScheduled, *resultData.Alternatives[0].PowerSequence[0].State.State)
+	// Other state fields should remain unchanged
+	assert.True(t, *resultData.Alternatives[0].PowerSequence[0].State.SequenceRemoteControllable)
+	assert.Nil(t, resultData.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber)
+}
+
+// Test device updates activeSlotNumber when execution starts
+func TestSmartEnergyManagementPsDataType_UpdateList_ActiveSlotNumberUpdate(t *testing.T) {
+	// Arrange - heat pump in running state
+	existing := createOHPCFStructure()
+	existing.Alternatives[0].PowerSequence[0].State.State = util.Ptr(PowerSequenceStateTypeRunning)
+
+	// Device notifies that slot 1 is now active
+	notification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					ActiveSlotNumber: util.Ptr(PowerTimeSlotNumberType(1)),
+				},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	// ActiveSlotNumber should be updated
+	assert.NotNil(t, resultData.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber)
+	assert.Equal(t, PowerTimeSlotNumberType(1), *resultData.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber)
+	// State should remain running
+	assert.Equal(t, PowerSequenceStateTypeRunning, *resultData.Alternatives[0].PowerSequence[0].State.State)
+}
+
+// Test device updates elapsed time during execution
+func TestSmartEnergyManagementPsDataType_UpdateList_ElapsedTimeUpdate(t *testing.T) {
+	// Arrange - heat pump running slot 1
+	existing := createOHPCFStructure()
+	existing.Alternatives[0].PowerSequence[0].State.State = util.Ptr(PowerSequenceStateTypeRunning)
+	existing.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber = util.Ptr(PowerTimeSlotNumberType(1))
+
+	// Device notifies elapsed time progress (e.g., 5 minutes into execution)
+	elapsedTime := DurationType("PT5M") // 5 minutes in ISO 8601 duration format
+	notification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					ElapsedSlotTime: &elapsedTime,
+				},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	// ElapsedSlotTime should be updated
+	assert.NotNil(t, resultData.Alternatives[0].PowerSequence[0].State.ElapsedSlotTime)
+	assert.Equal(t, DurationType("PT5M"), *resultData.Alternatives[0].PowerSequence[0].State.ElapsedSlotTime)
+	// Other fields should remain unchanged
+	assert.Equal(t, PowerSequenceStateTypeRunning, *resultData.Alternatives[0].PowerSequence[0].State.State)
+	assert.Equal(t, PowerTimeSlotNumberType(1), *resultData.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber)
+}
+
+// Test device sends multiple runtime updates in one message
+func TestSmartEnergyManagementPsDataType_UpdateList_MultipleRuntimeUpdates(t *testing.T) {
+	// Arrange - heat pump scheduled but not yet running
+	existing := createOHPCFStructure()
+	existing.Alternatives[0].PowerSequence[0].State.State = util.Ptr(PowerSequenceStateTypeScheduled)
+
+	// Device sends comprehensive runtime update when starting execution
+	elapsedTime := DurationType("PT0S")    // Just started
+	remainingTime := DurationType("PT30M") // 30 minutes remaining
+	notification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					State:             util.Ptr(PowerSequenceStateTypeRunning),
+					ActiveSlotNumber:  util.Ptr(PowerTimeSlotNumberType(1)),
+					ElapsedSlotTime:   &elapsedTime,
+					RemainingSlotTime: &remainingTime,
+				},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	// All runtime fields should be updated
+	assert.Equal(t, PowerSequenceStateTypeRunning, *resultData.Alternatives[0].PowerSequence[0].State.State)
+	assert.Equal(t, PowerTimeSlotNumberType(1), *resultData.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber)
+	assert.Equal(t, DurationType("PT0S"), *resultData.Alternatives[0].PowerSequence[0].State.ElapsedSlotTime)
+	assert.Equal(t, DurationType("PT30M"), *resultData.Alternatives[0].PowerSequence[0].State.RemainingSlotTime)
+	// SequenceRemoteControllable should remain unchanged
+	assert.True(t, *resultData.Alternatives[0].PowerSequence[0].State.SequenceRemoteControllable)
+}
+
+// Edge case: Update to non-existent sequence
+func TestSmartEnergyManagementPsDataType_UpdateList_NonExistentSequence(t *testing.T) {
+	// Arrange - heat pump with one sequence (id=1)
+	existing := createOHPCFStructure()
+
+	// Device tries to update sequence with id=2 (doesn't exist)
+	notification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{
+				{}, // Empty first sequence
+				{ // Second sequence (index 1)
+					State: &PowerSequenceStateDataType{
+						State: util.Ptr(PowerSequenceStateTypeRunning),
+					},
+				},
+			},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert - should succeed but not crash, existing data unchanged
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	// Should still have only one sequence
+	assert.Equal(t, 1, len(resultData.Alternatives[0].PowerSequence))
+	// Original sequence should be unchanged
+	assert.Equal(t, PowerSequenceStateTypeInactive, *resultData.Alternatives[0].PowerSequence[0].State.State)
+}
+
+// Edge case: Invalid slot number update
+func TestSmartEnergyManagementPsDataType_UpdateList_InvalidSlotNumber(t *testing.T) {
+	// Arrange - heat pump with only one slot
+	existing := createOHPCFStructure()
+	existing.Alternatives[0].PowerSequence[0].State.State = util.Ptr(PowerSequenceStateTypeRunning)
+
+	// Device sends invalid slot number (99, but only slot 1 exists)
+	notification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					ActiveSlotNumber: util.Ptr(PowerTimeSlotNumberType(99)),
+				},
+			}},
+		}},
+	}
+
+	// Act - should accept the update (validation is higher layer responsibility)
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	// ActiveSlotNumber should be updated even if invalid (validation happens elsewhere)
+	assert.NotNil(t, resultData.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber)
+	assert.Equal(t, PowerTimeSlotNumberType(99), *resultData.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber)
+}
+
+// Test state transition: scheduled -> running -> completed
+func TestSmartEnergyManagementPsDataType_UpdateList_StateTransitionFlow(t *testing.T) {
+	// Arrange - start with scheduled state
+	existing := createOHPCFStructure()
+	existing.Alternatives[0].PowerSequence[0].State.State = util.Ptr(PowerSequenceStateTypeScheduled)
+
+	// Step 1: Device starts running
+	runningNotification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					State:            util.Ptr(PowerSequenceStateTypeRunning),
+					ActiveSlotNumber: util.Ptr(PowerTimeSlotNumberType(1)),
+				},
+			}},
+		}},
+	}
+
+	result1, success1 := existing.UpdateList(false, true, runningNotification, NewFilterTypePartial(), nil, nil)
+	assert.True(t, success1)
+
+	// Step 2: Device completes execution
+	// Note: In partial updates, nil means "don't update". To clear a field, we'd need a different mechanism.
+	// For now, the device just updates the state, and ActiveSlotNumber remains (though it's irrelevant when completed)
+	completedNotification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					State: util.Ptr(PowerSequenceStateTypeCompleted),
+				},
+			}},
+		}},
+	}
+
+	result2, success2 := result1.(*SmartEnergyManagementPsDataType).UpdateList(false, true, completedNotification, NewFilterTypePartial(), nil, nil)
+
+	// Assert final state
+	assert.True(t, success2)
+	assert.NotNil(t, result2)
+
+	finalData := result2.(*SmartEnergyManagementPsDataType)
+	assert.Equal(t, PowerSequenceStateTypeCompleted, *finalData.Alternatives[0].PowerSequence[0].State.State)
+	// ActiveSlotNumber remains from previous state (this is expected behavior for partial updates)
+	assert.Equal(t, PowerTimeSlotNumberType(1), *finalData.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber)
+}
+
+// Test notification with only elapsed time (no other changes)
+func TestSmartEnergyManagementPsDataType_UpdateList_ElapsedTimeOnly(t *testing.T) {
+	// Arrange - heat pump running with active slot
+	existing := createOHPCFStructure()
+	existing.Alternatives[0].PowerSequence[0].State.State = util.Ptr(PowerSequenceStateTypeRunning)
+	existing.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber = util.Ptr(PowerTimeSlotNumberType(1))
+	initialElapsedTime := DurationType("PT5M") // 5 minutes
+	existing.Alternatives[0].PowerSequence[0].State.ElapsedSlotTime = &initialElapsedTime
+
+	// Device sends progress update (now 10 minutes elapsed)
+	updatedElapsedTime := DurationType("PT10M") // 10 minutes
+	notification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					ElapsedSlotTime: &updatedElapsedTime,
+				},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+	assert.NotNil(t, result)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	// Only elapsed time should be updated
+	assert.Equal(t, DurationType("PT10M"), *resultData.Alternatives[0].PowerSequence[0].State.ElapsedSlotTime)
+	// All other fields should remain unchanged
+	assert.Equal(t, PowerSequenceStateTypeRunning, *resultData.Alternatives[0].PowerSequence[0].State.State)
+	assert.Equal(t, PowerTimeSlotNumberType(1), *resultData.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber)
+	assert.True(t, *resultData.Alternatives[0].PowerSequence[0].State.SequenceRemoteControllable)
+}
+
+// Test complete notification scenario from device perspective
+func TestSmartEnergyManagementPsDataType_UpdateList_CompleteNotificationScenario(t *testing.T) {
+	// Arrange - Energy manager has sent a schedule to heat pump
+	heatPump := createOHPCFStructure()
+	startTime := NewAbsoluteOrRelativeTimeType("2024-01-15T14:00:00Z")
+	heatPump.Alternatives[0].PowerSequence[0].Schedule.StartTime = startTime
+	heatPump.Alternatives[0].PowerSequence[0].State.State = util.Ptr(PowerSequenceStateTypeScheduled)
+
+	// Scenario: Heat pump executes the scheduled sequence
+
+	// 1. Heat pump starts execution at scheduled time
+	startNotification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					State:             util.Ptr(PowerSequenceStateTypeRunning),
+					ActiveSlotNumber:  util.Ptr(PowerTimeSlotNumberType(1)),
+					ElapsedSlotTime:   util.Ptr(DurationType("PT0S")),
+					RemainingSlotTime: util.Ptr(DurationType("PT30M")),
+				},
+			}},
+		}},
+	}
+
+	result1, success1 := heatPump.UpdateList(false, true, startNotification, NewFilterTypePartial(), nil, nil)
+	assert.True(t, success1)
+	heatPump = result1.(*SmartEnergyManagementPsDataType)
+
+	// Verify state after start
+	assert.Equal(t, PowerSequenceStateTypeRunning, *heatPump.Alternatives[0].PowerSequence[0].State.State)
+	assert.Equal(t, PowerTimeSlotNumberType(1), *heatPump.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber)
+	assert.Equal(t, DurationType("PT0S"), *heatPump.Alternatives[0].PowerSequence[0].State.ElapsedSlotTime)
+
+	// 2. Heat pump sends progress update after 15 minutes
+	progressNotification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					ElapsedSlotTime:   util.Ptr(DurationType("PT15M")),
+					RemainingSlotTime: util.Ptr(DurationType("PT15M")),
+				},
+			}},
+		}},
+	}
+
+	result2, success2 := heatPump.UpdateList(false, true, progressNotification, NewFilterTypePartial(), nil, nil)
+	assert.True(t, success2)
+	heatPump = result2.(*SmartEnergyManagementPsDataType)
+
+	// Verify progress update
+	assert.Equal(t, PowerSequenceStateTypeRunning, *heatPump.Alternatives[0].PowerSequence[0].State.State) // Unchanged
+	assert.Equal(t, DurationType("PT15M"), *heatPump.Alternatives[0].PowerSequence[0].State.ElapsedSlotTime)
+	assert.Equal(t, DurationType("PT15M"), *heatPump.Alternatives[0].PowerSequence[0].State.RemainingSlotTime)
+
+	// 3. Heat pump completes execution
+	completeNotification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				State: &PowerSequenceStateDataType{
+					State:             util.Ptr(PowerSequenceStateTypeCompleted),
+					ElapsedSlotTime:   util.Ptr(DurationType("PT30M")),
+					RemainingSlotTime: util.Ptr(DurationType("PT0S")),
+				},
+			}},
+		}},
+	}
+
+	result3, success3 := heatPump.UpdateList(false, true, completeNotification, NewFilterTypePartial(), nil, nil)
+	assert.True(t, success3)
+	heatPump = result3.(*SmartEnergyManagementPsDataType)
+
+	// Verify final state
+	assert.Equal(t, PowerSequenceStateTypeCompleted, *heatPump.Alternatives[0].PowerSequence[0].State.State)
+	assert.Equal(t, DurationType("PT30M"), *heatPump.Alternatives[0].PowerSequence[0].State.ElapsedSlotTime)
+	assert.Equal(t, DurationType("PT0S"), *heatPump.Alternatives[0].PowerSequence[0].State.RemainingSlotTime)
+	// ActiveSlotNumber remains set (partial updates don't clear fields)
+	assert.Equal(t, PowerTimeSlotNumberType(1), *heatPump.Alternatives[0].PowerSequence[0].State.ActiveSlotNumber)
+
+	// Verify other fields remained unchanged throughout
+	assert.Equal(t, startTime, heatPump.Alternatives[0].PowerSequence[0].Schedule.StartTime)
+	assert.True(t, *heatPump.Alternatives[0].PowerSequence[0].State.SequenceRemoteControllable)
+}
+
+// Helper function to create a typical OHPCF structure
+func createOHPCFStructure() *SmartEnergyManagementPsDataType {
+	return &SmartEnergyManagementPsDataType{
+		NodeScheduleInformation: &PowerSequenceNodeScheduleInformationDataType{
+			NodeRemoteControllable:           util.Ptr(true),
+			SupportsSingleSlotSchedulingOnly: util.Ptr(true),
+			AlternativesCount:                util.Ptr(uint(1)),
+			TotalSequencesCountMax:           util.Ptr(uint(1)),
+			SupportsReselection:              util.Ptr(false),
+		},
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			Relation: &SmartEnergyManagementPsAlternativesRelationType{
+				AlternativesId: util.Ptr(AlternativesIdType(1)),
+			},
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				Description: &PowerSequenceDescriptionDataType{
+					SequenceId: util.Ptr(PowerSequenceIdType(1)),
+					PowerUnit:  util.Ptr(UnitOfMeasurementTypeW),
+				},
+				State: &PowerSequenceStateDataType{
+					State:                      util.Ptr(PowerSequenceStateTypeInactive),
+					SequenceRemoteControllable: util.Ptr(true),
+				},
+				Schedule: &PowerSequenceScheduleDataType{},
+				PowerTimeSlot: []SmartEnergyManagementPsPowerTimeSlotType{{
+					Schedule: &PowerTimeSlotScheduleDataType{
+						SlotNumber: util.Ptr(PowerTimeSlotNumberType(1)),
+					},
+					ValueList: &SmartEnergyManagementPsPowerTimeSlotValueListType{
+						Value: []PowerTimeSlotValueDataType{{
+							ValueType: util.Ptr(PowerTimeSlotValueTypeTypePower),
+							Value: &ScaledNumberType{
+								Number: util.Ptr(NumberType(3000)),
+								Scale:  util.Ptr(ScaleType(0)),
+							},
+						}},
+					},
+				}},
+			}},
+		}},
+	}
+}
+
+// A keyed partial update must add the announced alternative when the local data
+// no longer holds it, e.g. after the server withdrew all alternatives and later
+// announces a new one.
+func TestSmartEnergyManagementPsDataType_UpdateList_AddsUnknownAlternative(t *testing.T) {
+	// Arrange - all alternatives withdrawn
+	existing := &SmartEnergyManagementPsDataType{
+		NodeScheduleInformation: &PowerSequenceNodeScheduleInformationDataType{
+			NodeRemoteControllable: util.Ptr(true),
+			AlternativesCount:      util.Ptr(uint(0)),
+		},
+	}
+
+	// Server announces a new alternative including its keys
+	notification := &SmartEnergyManagementPsDataType{
+		NodeScheduleInformation: &PowerSequenceNodeScheduleInformationDataType{
+			AlternativesCount: util.Ptr(uint(1)),
+		},
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			Relation: &SmartEnergyManagementPsAlternativesRelationType{
+				AlternativesId: util.Ptr(AlternativesIdType(0)),
+			},
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				Description: &PowerSequenceDescriptionDataType{
+					SequenceId: util.Ptr(PowerSequenceIdType(0)),
+				},
+				State: &PowerSequenceStateDataType{
+					State: util.Ptr(PowerSequenceStateTypeInactive),
+				},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	assert.Equal(t, uint(1), *resultData.NodeScheduleInformation.AlternativesCount)
+	require.Equal(t, 1, len(resultData.Alternatives))
+	require.Equal(t, 1, len(resultData.Alternatives[0].PowerSequence))
+	assert.Equal(t, PowerSequenceStateTypeInactive, *resultData.Alternatives[0].PowerSequence[0].State.State)
+}
+
+// A keyed partial update must add an announced sequence to an existing alternative.
+func TestSmartEnergyManagementPsDataType_UpdateList_AddsUnknownSequence(t *testing.T) {
+	// Arrange - alternative with sequence id 1
+	existing := createOHPCFStructure()
+
+	// Server announces an additional sequence id 2
+	notification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			Relation: &SmartEnergyManagementPsAlternativesRelationType{
+				AlternativesId: util.Ptr(AlternativesIdType(1)),
+			},
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				Description: &PowerSequenceDescriptionDataType{
+					SequenceId: util.Ptr(PowerSequenceIdType(2)),
+				},
+				State: &PowerSequenceStateDataType{
+					State: util.Ptr(PowerSequenceStateTypeRunning),
+				},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	require.Equal(t, 1, len(resultData.Alternatives))
+	require.Equal(t, 2, len(resultData.Alternatives[0].PowerSequence))
+	assert.Equal(t, PowerSequenceStateTypeRunning, *resultData.Alternatives[0].PowerSequence[1].State.State)
+}
+
+// A remote client may only update existing entries, a write targeting an unknown
+// key is rejected so the client is NACKed instead of silently ignored.
+func TestSmartEnergyManagementPsDataType_UpdateList_RemoteWriteRejectsUnknownAlternative(t *testing.T) {
+	// Arrange - all alternatives withdrawn
+	existing := &SmartEnergyManagementPsDataType{
+		NodeScheduleInformation: &PowerSequenceNodeScheduleInformationDataType{
+			NodeRemoteControllable: util.Ptr(true),
+		},
+	}
+
+	write := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			Relation: &SmartEnergyManagementPsAlternativesRelationType{
+				AlternativesId: util.Ptr(AlternativesIdType(0)),
+			},
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				Description: &PowerSequenceDescriptionDataType{
+					SequenceId: util.Ptr(PowerSequenceIdType(0)),
+				},
+				State: &PowerSequenceStateDataType{
+					State: util.Ptr(PowerSequenceStateTypeRunning),
+				},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(true, true, write, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.False(t, success)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	assert.Equal(t, 0, len(resultData.Alternatives))
+}
+
+// A keyed partial update must add an announced time slot to an existing sequence.
+func TestSmartEnergyManagementPsDataType_UpdateList_AddsUnknownTimeSlot(t *testing.T) {
+	// Arrange - sequence with slot 1
+	existing := createOHPCFStructure()
+
+	// Server announces an additional slot 2
+	notification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			Relation: &SmartEnergyManagementPsAlternativesRelationType{
+				AlternativesId: util.Ptr(AlternativesIdType(1)),
+			},
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				Description: &PowerSequenceDescriptionDataType{
+					SequenceId: util.Ptr(PowerSequenceIdType(1)),
+				},
+				PowerTimeSlot: []SmartEnergyManagementPsPowerTimeSlotType{{
+					Schedule: &PowerTimeSlotScheduleDataType{
+						SlotNumber: util.Ptr(PowerTimeSlotNumberType(2)),
+					},
+					ValueList: &SmartEnergyManagementPsPowerTimeSlotValueListType{
+						Value: []PowerTimeSlotValueDataType{{
+							ValueType: util.Ptr(PowerTimeSlotValueTypeTypePower),
+							Value:     &ScaledNumberType{Number: util.Ptr(NumberType(1000))},
+						}},
+					},
+				}},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	slots := resultData.Alternatives[0].PowerSequence[0].PowerTimeSlot
+	require.Equal(t, 2, len(slots))
+	assert.Equal(t, PowerTimeSlotNumberType(2), *slots[1].Schedule.SlotNumber)
+}
+
+// A keyed partial update must add an announced value to an existing time slot.
+func TestSmartEnergyManagementPsDataType_UpdateList_AddsUnknownTimeSlotValue(t *testing.T) {
+	// Arrange - slot 1 carries a power value only
+	existing := createOHPCFStructure()
+
+	// Server announces an additional powerMax value
+	notification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			Relation: &SmartEnergyManagementPsAlternativesRelationType{
+				AlternativesId: util.Ptr(AlternativesIdType(1)),
+			},
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				Description: &PowerSequenceDescriptionDataType{
+					SequenceId: util.Ptr(PowerSequenceIdType(1)),
+				},
+				PowerTimeSlot: []SmartEnergyManagementPsPowerTimeSlotType{{
+					Schedule: &PowerTimeSlotScheduleDataType{
+						SlotNumber: util.Ptr(PowerTimeSlotNumberType(1)),
+					},
+					ValueList: &SmartEnergyManagementPsPowerTimeSlotValueListType{
+						Value: []PowerTimeSlotValueDataType{{
+							ValueType: util.Ptr(PowerTimeSlotValueTypeTypePowerMax),
+							Value:     &ScaledNumberType{Number: util.Ptr(NumberType(3850))},
+						}},
+					},
+				}},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	values := resultData.Alternatives[0].PowerSequence[0].PowerTimeSlot[0].ValueList.Value
+	require.Equal(t, 2, len(values))
+	assert.Equal(t, PowerTimeSlotValueTypeTypePowerMax, *values[1].ValueType)
+	assert.Equal(t, NumberType(3850), *values[1].Value.Number)
+}
+
+// A keyed partial update must merge the sequence level containers, not just state
+// and schedule, so a re-announced sequence regains its operating constraints.
+func TestSmartEnergyManagementPsDataType_UpdateList_MergesSequenceConstraints(t *testing.T) {
+	// Arrange - sequence known by key only, e.g. added by a state-only partial update
+	existing := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			Relation: &SmartEnergyManagementPsAlternativesRelationType{
+				AlternativesId: util.Ptr(AlternativesIdType(0)),
+			},
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				Description: &PowerSequenceDescriptionDataType{
+					SequenceId: util.Ptr(PowerSequenceIdType(0)),
+				},
+				State: &PowerSequenceStateDataType{
+					State: util.Ptr(PowerSequenceStateTypeInvalid),
+				},
+			}},
+		}},
+	}
+
+	// Server re-announces the full sequence
+	notification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			Relation: &SmartEnergyManagementPsAlternativesRelationType{
+				AlternativesId: util.Ptr(AlternativesIdType(0)),
+			},
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				Description: &PowerSequenceDescriptionDataType{
+					SequenceId: util.Ptr(PowerSequenceIdType(0)),
+					PowerUnit:  util.Ptr(UnitOfMeasurementTypeW),
+				},
+				State: &PowerSequenceStateDataType{
+					State: util.Ptr(PowerSequenceStateTypeInactive),
+				},
+				ScheduleConstraints: &PowerSequenceScheduleConstraintsDataType{
+					EarliestStartTime: NewAbsoluteOrRelativeTimeType("PT0S"),
+				},
+				OperatingConstraintsInterrupt: &OperatingConstraintsInterruptDataType{
+					IsPausable:  util.Ptr(false),
+					IsStoppable: util.Ptr(true),
+				},
+				OperatingConstraintsDuration: &OperatingConstraintsDurationDataType{
+					ActiveDurationMin: NewDurationType(3 * time.Minute),
+				},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+
+	resultData := result.(*SmartEnergyManagementPsDataType)
+	require.Equal(t, 1, len(resultData.Alternatives))
+	require.Equal(t, 1, len(resultData.Alternatives[0].PowerSequence))
+
+	sequence := resultData.Alternatives[0].PowerSequence[0]
+	assert.Equal(t, PowerSequenceStateTypeInactive, *sequence.State.State)
+	require.NotNil(t, sequence.Description.PowerUnit)
+	require.NotNil(t, sequence.ScheduleConstraints)
+	require.NotNil(t, sequence.OperatingConstraintsDuration)
+	require.NotNil(t, sequence.OperatingConstraintsInterrupt)
+	assert.Equal(t, UnitOfMeasurementTypeW, *sequence.Description.PowerUnit)
+	assert.False(t, *sequence.OperatingConstraintsInterrupt.IsPausable)
+	assert.True(t, *sequence.OperatingConstraintsInterrupt.IsStoppable)
+}
+
+// A partial update must not clear constraints it does not carry.
+func TestSmartEnergyManagementPsDataType_UpdateList_KeepsSequenceConstraints(t *testing.T) {
+	// Arrange
+	existing := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			Relation: &SmartEnergyManagementPsAlternativesRelationType{
+				AlternativesId: util.Ptr(AlternativesIdType(0)),
+			},
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				Description: &PowerSequenceDescriptionDataType{
+					SequenceId: util.Ptr(PowerSequenceIdType(0)),
+				},
+				OperatingConstraintsInterrupt: &OperatingConstraintsInterruptDataType{
+					IsPausable:  util.Ptr(false),
+					IsStoppable: util.Ptr(true),
+				},
+			}},
+		}},
+	}
+
+	// Server reports a state change only
+	notification := &SmartEnergyManagementPsDataType{
+		Alternatives: []SmartEnergyManagementPsAlternativesType{{
+			Relation: &SmartEnergyManagementPsAlternativesRelationType{
+				AlternativesId: util.Ptr(AlternativesIdType(0)),
+			},
+			PowerSequence: []SmartEnergyManagementPsPowerSequenceType{{
+				Description: &PowerSequenceDescriptionDataType{
+					SequenceId: util.Ptr(PowerSequenceIdType(0)),
+				},
+				State: &PowerSequenceStateDataType{
+					State: util.Ptr(PowerSequenceStateTypeRunning),
+				},
+			}},
+		}},
+	}
+
+	// Act
+	result, success := existing.UpdateList(false, true, notification, NewFilterTypePartial(), nil, nil)
+
+	// Assert
+	assert.True(t, success)
+
+	sequence := result.(*SmartEnergyManagementPsDataType).Alternatives[0].PowerSequence[0]
+	assert.Equal(t, PowerSequenceStateTypeRunning, *sequence.State.State)
+	require.NotNil(t, sequence.OperatingConstraintsInterrupt)
+	assert.True(t, *sequence.OperatingConstraintsInterrupt.IsStoppable)
+}
