@@ -827,6 +827,45 @@ func (s *LocalFeatureTestSuite) Test_Write_Callback_Two_Fail() {
 	time.Sleep(time.Millisecond * 200)
 }
 
+// two writes from the same remote device waiting for their approvals at the
+// same time: the first approval of one must not drop the approvals the other
+// already has
+func (s *LocalFeatureTestSuite) Test_Write_Callback_Two_Interleaved() {
+	newMsg := func(msgCounter model.MsgCounterType) *api.Message {
+		return &api.Message{
+			RequestHeader: &model.HeaderType{
+				MsgCounter: util.Ptr(msgCounter),
+				AckRequest: util.Ptr(true),
+			},
+			CmdClassifier: model.CmdClassifierTypeWrite,
+			FeatureRemote: s.remoteSubFeature,
+			DeviceRemote:  s.remoteSubFeature.Device(),
+			Cmd: model.CmdType{
+				LoadControlLimitListData: &model.LoadControlLimitListDataType{},
+			},
+		}
+	}
+	msg1, msg2 := newMsg(1), newMsg(2)
+
+	tempLSFWrite := s.localServerFeatureWrite
+
+	// the approvals are given below, in an order the callbacks cannot ensure
+	cb := func(msg *api.Message) {}
+	tempLSFWrite.AddWriteApprovalCallback(cb)
+	tempLSFWrite.AddWriteApprovalCallback(cb)
+
+	s.senderMock.EXPECT().ResultSuccess(mock.Anything, mock.Anything).Return(nil).Twice()
+
+	assert.Nil(s.T(), tempLSFWrite.HandleMessage(msg1))
+	assert.Nil(s.T(), tempLSFWrite.HandleMessage(msg2))
+
+	approve := model.ErrorType{ErrorNumber: 0}
+	tempLSFWrite.ApproveOrDenyWrite(msg1, approve)
+	tempLSFWrite.ApproveOrDenyWrite(msg2, approve)
+	tempLSFWrite.ApproveOrDenyWrite(msg1, approve)
+	tempLSFWrite.ApproveOrDenyWrite(msg2, approve)
+}
+
 func (s *LocalFeatureTestSuite) Test_Write_Callback_Timeout() {
 	s.localServerFeatureWrite.SetWriteApprovalTimeout(time.Millisecond * 500)
 

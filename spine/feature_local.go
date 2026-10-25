@@ -230,13 +230,12 @@ func (r *FeatureLocal) ApproveOrDenyWrite(msg *api.Message, err model.ErrorType)
 	r.muxWriteReceived.Lock()
 	defer r.muxWriteReceived.Unlock()
 	if count > 1 && err.ErrorNumber == 0 {
-		amount, ok := r.writeApprovalReceived[ski][*msg.RequestHeader.MsgCounter]
-		if ok {
-			r.writeApprovalReceived[ski][*msg.RequestHeader.MsgCounter] = amount + 1
-		} else {
+		// other writes of this device may be waiting for their approvals too,
+		// so the map of the device is created once and never replaced
+		if r.writeApprovalReceived[ski] == nil {
 			r.writeApprovalReceived[ski] = make(map[model.MsgCounterType]int)
-			r.writeApprovalReceived[ski][*msg.RequestHeader.MsgCounter] = 1
 		}
+		r.writeApprovalReceived[ski][*msg.RequestHeader.MsgCounter]++
 		// do we have enough approve messages, if not exit
 		if r.writeApprovalReceived[ski][*msg.RequestHeader.MsgCounter] < count {
 			return
